@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Radar — pre-token protocols ranked by implied value</title>
+<meta name="description" content="A launch radar: every pre-token protocol in the snapshot, priced by the market's own peer multiples, with a farm plan for each.">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="masthead">
+  <div class="mast-inner">
+    <div class="brand">
+      <span class="pulse" aria-hidden="true"></span>
+      <div>
+        <h1>TOKEN RADAR</h1>
+        <p class="tagline">Pre-token protocols, ranked by what their token would be worth — priced from the market's own books, with a farm plan for every row.</p>
+      </div>
+    </div>
+    <div class="mast-meta" id="mast-meta"></div>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="Views">
+    <a href="#/board" data-tab="board">The board</a>
+    <a href="#/live" data-tab="live">Already trading</a>
+    <a href="#/model" data-tab="model">The model</a>
+  </nav>
+</header>
+<main id="app" aria-busy="true"></main>
+<footer class="foot">
+  <p>Implied value is this radar's own claim, derived only from the sealed snapshot's figures — TVL, seven-day change, days tracked, chains — and the market-cap-to-TVL ratios of protocols that already trade. It is not a prediction that a token will be issued, or when. A protocol here <em>records no token</em> in DefiLlama's record; that is a statement about the record, not proof none exists.</p>
+  <p id="foot-source"></p>
+</footer>
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
