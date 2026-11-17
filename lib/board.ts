@@ -172,7 +172,12 @@ export function buildRadar(snapshot: Snapshot, constants: Constants = CONSTANTS)
     peer_min_tvl_usd: PEER_MIN_TVL_USD,
     peer_ratio_cap: PEER_RATIO_CAP,
     market_multiple: round4(market),
-    multiples: multiples.map((m) => ({ ...m, peer_median: m.peer_median === null ? null : round4(m.peer_median), multiple: round4(m.multiple) })),
+    multiples: multiples.map((m) => ({
+      ...m,
+      peer_median: m.peer_median === null ? null : round4(m.peer_median),
+      credibility: round4(m.credibility),
+      multiple: round4(m.multiple),
+    })),
     counts: {
       protocols: snapshot.protocols.length,
       pre_token: snapshot.protocols.filter(recordsNoToken).length,

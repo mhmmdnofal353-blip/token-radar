@@ -78,7 +78,8 @@ function renderBoard(params) {
   <section class="view">
     <p class="lede">Every protocol in the snapshot that <b>records no token</b>, ranked by implied value: what a token
     would most plausibly be worth if it launched at the snapshot's figures, priced at the <b>market-cap-to-TVL multiple
-    its own category's trading protocols actually carry</b>. The house watchlist (over $${(R.floor_usd / 1e6).toFixed(0)}M of TVL) is the floor —
+    its own category's trading protocols actually carry</b> — weighted by how many peers stand behind that multiple, so one
+    rich-trading token never prices a whole category. The house watchlist (over $${(R.floor_usd / 1e6).toFixed(0)}M of TVL) is the floor —
     all ${R.counts.watchlist} are here — and the radar adds ${R.counts.early} earlier protocols below it. Click any row for its
     valuation, factor by factor, and its farm plan.</p>
     <div class="toolbar">
@@ -120,6 +121,8 @@ function renderBoard(params) {
   applyFilters();
 }
 
+const topImplied = R.rows.length > 0 ? R.rows[0].implied_value_usd : 1;
+
 function applyFilters() {
   const q = state.q.trim().toLowerCase();
   let rows = R.rows.filter((r) =>
@@ -147,8 +150,8 @@ function applyFilters() {
       <td class="num">${money(r.tvl_usd)}</td>
       <td class="num">${pct(r.change_7d)}</td>
       <td class="num">${ageText(r.age_days)}</td>
-      <td class="num">${mult(r.model.peer_multiple)}</td>
-      <td class="num implied">${money(r.implied_value_usd)}</td>
+      <td class="num">${mult(r.model.peer_multiple)}<br><span class="peers">${r.model.peer_count} peer${r.model.peer_count === 1 ? '' : 's'}</span></td>
+      <td class="num implied">${money(r.implied_value_usd)}<span class="bar"><i style="width:${Math.max(2, Math.sqrt(r.implied_value_usd / topImplied) * 100).toFixed(1)}%"></i></span></td>
       <td><span class="sig ${r.momentum_signal === 'Surging' || r.momentum_signal === 'Climbing' ? 'hot' : r.momentum_signal === 'Falling' || r.momentum_signal === 'Cooling' ? 'cold' : ''}">${esc(r.momentum_signal)}</span></td>
     </tr>`).join('');
 }
@@ -160,7 +163,7 @@ function renderDetail(r) {
   const peers = R.live.filter((l) => l.category === r.category).slice(0, 5);
   const steps = [
     ['TVL — the book being priced', moneyFull(r.tvl_usd), r.tvl_usd],
-    [`Peer multiple — ${esc(r.category ?? 'uncategorised')}, ${m ? `${m.peers} trading peers` : 'market median'}`, mult(r.model.peer_multiple), r.tvl_usd * r.model.peer_multiple],
+    [`Peer multiple — ${esc(r.category ?? 'uncategorised')}, ${m && m.peers > 0 ? `median ${mult(m.peer_median ?? 0)} from ${m.peers} trading peer${m.peers === 1 ? '' : 's'}, credibility ${Math.round(m.credibility * 100)}%` : 'market median, no qualifying peer'}`, mult(r.model.peer_multiple), r.tvl_usd * r.model.peer_multiple],
     [`Momentum — seven-day TVL change ${r.change_7d === null ? 'unreported' : `${r.change_7d.toFixed(1)}%`}, saturated`, mult(r.model.momentum_factor), r.tvl_usd * r.model.peer_multiple * r.model.momentum_factor],
     [`Maturity — ${r.age_days === null ? 'listing date unreported, scored as one year' : `${commas(r.age_days)} days tracked with no token`}`, mult(r.model.maturity_factor), r.tvl_usd * r.model.peer_multiple * r.model.momentum_factor * r.model.maturity_factor],
     [`Breadth — TVL on ${r.chains.length} chain${r.chains.length === 1 ? '' : 's'}`, mult(r.model.breadth_factor), r.implied_value_usd],
@@ -191,7 +194,7 @@ function renderDetail(r) {
             ${steps.map(([name, factor, running], i) => `<tr class="${i === steps.length - 1 ? 'total' : ''}"><td class="fname">${name}</td><td class="num">${factor}</td><td class="num">${moneyFull(Math.round(running))}</td></tr>`).join('')}
           </table>
           <p>${m && m.peers > 0
-            ? `The multiple is the median market-cap/TVL of ${m.peers} already-trading ${esc(m.category)} protocols with a book over ${money(R.peer_min_tvl_usd)}, each ratio capped at ${R.peer_ratio_cap}×, shrunk toward the market median of ${mult(R.market_multiple)}.`
+            ? `The category median is ${mult(m.peer_median ?? 0)} — the median market-cap/TVL of ${m.peers} already-trading ${esc(m.category)} protocol${m.peers === 1 ? '' : 's'} with a book over ${money(R.peer_min_tvl_usd)}, each ratio capped at ${R.peer_ratio_cap}×. A median of ${m.peers} is evidence, not gospel, so it counts with credibility ${Math.round(m.credibility * 100)}% (${m.peers} peer${m.peers === 1 ? '' : 's'} against the model's k = ${R.constants.shrink_k}) and the multiple used is its geometric blend with the market median of ${mult(R.market_multiple)}: ${mult(r.model.peer_multiple)}. Thin categories stay near the market's price until more of their tokens trade; thick ones speak for themselves.`
             : `No already-trading protocol in this category carries a book over ${money(R.peer_min_tvl_usd)}, so the radar prices it at the whole-market median multiple of ${mult(R.market_multiple)} rather than inventing a category figure.`}</p>
           ${peers.length > 0 ? `<p>Trading peers on the calibration view: ${peers.map((l) => `${esc(l.name)} (${mult(l.mcap_to_tvl)})`).join(' · ')}.</p>` : ''}
           <p>Chains: ${r.chains.map(esc).join(', ') || 'none named'}.</p>
@@ -214,7 +217,8 @@ function renderLive() {
     <p class="lede">These protocols' tokens <b>already trade</b>, so the radar never ranks them — it measures with them.
     The board's multiples are built from the qualifying peers among them: a book over ${money(R.peer_min_tvl_usd)} and a ratio
     no higher than ${R.peer_ratio_cap}×, so a stretched or tiny-book token — a few sit near the top of this very table — cannot
-    set a category's price. Here they all are at the market's own raw values, largest first.</p>
+    set a category's price; and each category's median counts only with its credibility, so a category carried by one or two
+    of these books stays near the market's own price. Here they all are at the market's own raw values, largest first.</p>
     <div class="board-wrap"><table class="board">
       <thead><tr><th>Protocol</th><th>Category</th><th>Token</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">Cap / TVL</th><th class="num">7d</th></tr></thead>
       <tbody>${R.live.map((l) => `
@@ -245,7 +249,7 @@ function renderModel() {
       <div class="card">
         <h3>The four factors</h3>
         <ul class="tight">
-          <li><b>Peer multiple.</b> For the protocol's category, the median market-cap/TVL of its already-trading protocols whose TVL clears ${money(R.peer_min_tvl_usd)} (twice the snapshot's own floor), each ratio capped at ${R.peer_ratio_cap}× so one float-driven token cannot set a category's price. The median is shrunk toward the market median (${mult(R.market_multiple)}) with weight k = ${c.shrink_k}: a category with few peers borrows the market's strength, one with many stands alone. A category with no qualifying peer is priced at the market median, openly.</li>
+          <li><b>Peer multiple.</b> For the protocol's category, the median market-cap/TVL of its already-trading protocols whose TVL clears ${money(R.peer_min_tvl_usd)} (twice the snapshot's own floor), each ratio capped at ${R.peer_ratio_cap}× so one float-driven token cannot set a category's price. The median then counts only with its <b>credibility</b>, Z = peers / (peers + ${c.shrink_k}), and the multiple used is the geometric blend <code>market^(1−Z) × median^Z</code> against the market median (${mult(R.market_multiple)}): a lone peer — one small book whose token trades rich — moves its category barely a seventh of the way off the market's price, six peers earn half the say, and a category with thirty peers stands nearly on its own. The blend is geometric because a multiple is a ratio, and evidence about ratios multiplies rather than adds. A category with no qualifying peer is priced at the market median, openly.</li>
           <li><b>Momentum.</b> The seven-day TVL change through a saturating curve, <code>1 + ${c.momentum_weight} × g / (${c.momentum_scale} + |g|)</code>: +25% earns about ×1.18, +400% only ×1.33, and a collapsing book is marked down, never to zero.</li>
           <li><b>Maturity.</b> <code>${c.maturity_base} + ${c.maturity_span} × age / (age + ${c.maturity_mid_days})</code> on days tracked with no token: a launch-day record starts at ×0.60 and a three-year record approaches ×1.00. An unreported listing date is scored as one year — neither punished nor believed.</li>
           <li><b>Breadth.</b> ×${c.breadth_per_chain} per chain beyond the first, up to ${c.breadth_max_extra} extra chains: distribution is worth something, and not much.</li>
@@ -264,8 +268,8 @@ function renderModel() {
       <div>
         <h3 style="margin:2px 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:0.1em; color:var(--teal)">Measured multiples by category</h3>
         <div class="scrollbox"><table class="plain">
-          <thead><tr><th>Category</th><th class="num">Peers</th><th class="num">Peer median</th><th class="num">Multiple used</th></tr></thead>
-          <tbody>${R.multiples.map((m) => `<tr><td>${esc(m.category)}</td><td class="num">${m.peers}</td><td class="num">${m.peer_median === null ? '—' : mult(m.peer_median)}</td><td class="num">${mult(m.multiple)}</td></tr>`).join('')}
+          <thead><tr><th>Category</th><th class="num">Peers</th><th class="num">Peer median</th><th class="num">Credibility</th><th class="num">Multiple used</th></tr></thead>
+          <tbody>${R.multiples.map((m) => `<tr><td>${esc(m.category)}</td><td class="num">${m.peers}</td><td class="num">${m.peer_median === null ? '—' : mult(m.peer_median)}</td><td class="num">${m.peers === 0 ? '—' : `${Math.round(m.credibility * 100)}%`}</td><td class="num">${mult(m.multiple)}</td></tr>`).join('')}
           </tbody>
         </table></div>
         <p style="color:var(--faint); font-size:12.5px">Model ${esc(R.model_version)} · snapshot as of ${esc(R.as_of)}. Implied value is a claim about a hypothetical token at today's figures, not a forecast of an airdrop, a date or an allocation.</p>

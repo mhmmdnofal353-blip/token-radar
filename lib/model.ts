@@ -7,11 +7,15 @@
 //   implied = TVL x peer multiple x momentum x maturity x breadth
 //
 // - peer multiple: protocols in the same DefiLlama category whose token already trades give a
-//   market cap / TVL ratio each; the category's multiple is their median, shrunk toward the
-//   whole-market median by the peer count, so a category with two peers borrows strength from
-//   the market and one with thirty stands on its own. No multiple is typed in by hand: every
-//   one is measured from the snapshot's live-token protocols at run time, so the same program
-//   re-prices the board the day the snapshot changes.
+//   market cap / TVL ratio each; the category's multiple starts from their median, but the
+//   median counts only with its credibility Z = peers / (peers + k): the multiple is the
+//   geometric blend market^(1-Z) x median^Z. One peer — in this snapshot a single $12M book
+//   whose token happens to trade rich — moves its category barely a seventh of the way from
+//   the market median to its own figure, while a category with thirty peers stands nearly on
+//   its own. The blend is geometric because a multiple is a ratio: evidence about ratios
+//   multiplies, it does not add. No multiple is typed in by hand: every one is measured from
+//   the snapshot's live-token protocols at run time, so the same program re-prices the board
+//   the day the snapshot changes.
 // - momentum: the seven-day TVL change, passed through a saturating curve (g / (25 + |g|)) so a
 //   +4,000% print on a small base cannot outvote a year of TVL, then weighted at 0.35.
 // - maturity: a hyperbolic credit for days tracked with no token, age / (age + 365), worth
@@ -60,7 +64,7 @@ export interface Constants {
 }
 
 export const CONSTANTS: Constants = {
-  shrink_k: 4,
+  shrink_k: 6,
   momentum_weight: 0.35,
   momentum_scale: 25,
   maturity_base: 0.6,
@@ -72,7 +76,7 @@ export const CONSTANTS: Constants = {
 };
 
 /** The model's version, named wherever its values are quoted. */
-export const MODEL_VERSION = 'radar-2 (peer multiples)';
+export const MODEL_VERSION = 'radar-3 (credibility-weighted peer multiples)';
 
 /** How many already-trading protocols the dashboard's calibration view carries. */
 export const LIVE_VIEW_ROWS = 36;
@@ -189,6 +193,8 @@ export interface CategoryMultiple {
   category: string;
   peers: number;
   peer_median: number | null;
+  /** How far the category's own median counts against the market's: peers / (peers + shrink_k). */
+  credibility: number;
   multiple: number;
 }
 
@@ -216,8 +222,13 @@ export const PEER_RATIO_CAP = 3;
 /**
  * The market's own yardsticks, measured from the snapshot: for every category, the median
  * market-cap/TVL of its already-trading protocols with a real book (TVL at or above
- * PEER_MIN_TVL_USD), each ratio winsorised at PEER_RATIO_CAP, shrunk toward the whole-market
- * median with weight shrink_k. Categories with no trading peer take the market median itself.
+ * PEER_MIN_TVL_USD), each ratio winsorised at PEER_RATIO_CAP. The median is then blended
+ * with the whole-market median by credibility: with n peers the category's own figure
+ * carries weight Z = n / (n + shrink_k) and the market's carries 1 - Z, combined
+ * geometrically — multiple = market^(1-Z) x median^Z — so a category needs shrink_k peers
+ * before its own median counts for even half, and a lone peer, however rich its token
+ * trades, can lift its category only a little way off the market's price. Categories with
+ * no trading peer take the market median itself.
  */
 export function measureMultiples(snapshot: Snapshot, constants: Constants = CONSTANTS): { market: number; byCategory: Map<string, CategoryMultiple> } {
   const ratiosByCategory = new Map<string, number[]>();
@@ -238,11 +249,13 @@ export function measureMultiples(snapshot: Snapshot, constants: Constants = CONS
   for (const category of categories) {
     const ratios = ratiosByCategory.get(category) ?? [];
     if (ratios.length === 0) {
-      byCategory.set(category, { category, peers: 0, peer_median: null, multiple: market });
+      byCategory.set(category, { category, peers: 0, peer_median: null, credibility: 0, multiple: market });
     } else {
       const med = median(ratios);
-      const shrunk = (ratios.length * med + constants.shrink_k * market) / (ratios.length + constants.shrink_k);
-      byCategory.set(category, { category, peers: ratios.length, peer_median: med, multiple: shrunk });
+      const credibility = ratios.length / (ratios.length + constants.shrink_k);
+      const multiple =
+        med > 0 && market > 0 ? Math.exp((1 - credibility) * Math.log(market) + credibility * Math.log(med)) : market;
+      byCategory.set(category, { category, peers: ratios.length, peer_median: med, credibility, multiple });
     }
   }
   return { market, byCategory };
